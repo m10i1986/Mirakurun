@@ -1,5 +1,4 @@
-ARG ARCH=
-FROM ${ARCH}node:24-trixie AS build
+FROM node:24-trixie AS build
 ENV DOCKER=YES NODE_ENV=production
 
 RUN apt-get update && \
@@ -47,7 +46,7 @@ RUN corepack enable &&\
     pnpm run build && \
     pnpm prune --prod
 
-FROM ${ARCH}node:24-trixie-slim
+FROM node:24-trixie-slim
 WORKDIR /app
 RUN corepack enable
 RUN apt-get update && \
