@@ -33,22 +33,20 @@ ADD api.d.ts .
 ADD api.yml .
 ADD index.d.ts .
 ADD package.json .
-ADD pnpm-lock.yaml .
-ADD pnpm-workspace.yaml .
+ADD package-lock.json .
 ADD processes.json .
 ADD tsconfig.json .
+ADD tslint.json .
 ADD webpack.config.js .
 ADD bin/ ./bin/
 ADD src/ ./src/
 
-RUN corepack enable &&\
-    pnpm install --frozen-lockfile --prod=false && \
-    pnpm run build && \
-    pnpm prune --prod
+RUN npm ci --include=dev && \
+    npm run build && \
+    npm ci --omit=dev
 
 FROM node:24-trixie-slim
 WORKDIR /app
-RUN corepack enable
 RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \

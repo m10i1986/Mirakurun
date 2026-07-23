@@ -15,9 +15,9 @@ export PATH=/opt/bin:$PATH
 export DOCKER=YES
 export INIT_PID=$$
 
-# pnpm
-export PNPM_HOME=/tmp/.pnpm
-export PATH=$PNPM_HOME:$PATH
+# npm 設定 (npm は npm_config_* の小文字形式のみ認識するため大文字化不可)
+export npm_config_cache=/tmp/.npm
+export npm_config_update_notifier=false
 
 # tweaks for glibc memory usage
 export MALLOC_ARENA_MAX=2
@@ -56,7 +56,7 @@ fi
 
 # only for test purpose
 if [ "$DISABLE_B25_TEST" != "1" ] && !(type "arib-b25-stream-test" > /dev/null 2>&1); then
-  pnpm add --dir /opt --store-dir /tmp/.pnpm/store --allow-build=arib-b25-stream-test arib-b25-stream-test
+  npm --prefix /opt install arib-b25-stream-test
   ln -sv /opt/node_modules/arib-b25-stream-test/bin/b25 /opt/bin/arib-b25-stream-test
 fi
 
@@ -81,7 +81,7 @@ function start() {
     export NODE_ENV=production
     node --max-semi-space-size=64 -r source-map-support/register lib/server.js &
   else
-    pnpm run debug &
+    npm run debug &
   fi
 
   wait
