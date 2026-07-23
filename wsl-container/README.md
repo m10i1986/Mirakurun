@@ -10,8 +10,8 @@ Linux ホストで動かす場合は、このディレクトリではなく `doc
 | --- | --- |
 | `Containerfile` | イメージビルド定義（`docker/Dockerfile` 相当） |
 | `entrypoint.sh` | コンテナ起動スクリプト |
-| `wslc.ps1` | 操作スクリプト本体（WSL Container / `wslc` 使用） |
-| `wslc.bat` | `wslc.ps1` を実行ポリシーに阻まれず起動するためのランチャー |
+| `run.ps1` | 操作スクリプト本体（WSL Container / `wslc` 使用） |
+| `run.bat` | `run.ps1` を実行ポリシーに阻まれず起動するためのランチャー |
 
 ## Windows (CLI only, GUI 不使用)
 
@@ -21,8 +21,8 @@ Microsoft が WSL 2.9.3 以降で提供する **WSL Container (`wslc`)** を使�
 （[参考記事](https://gihyo.jp/article/2026/06/wsl-container)）。`wslc` は Docker CLI 互換
 （`run` / `build` / `exec` / `logs` 等）のコマンド体系を持つ前提で本スクリプトを実装しています。
 
-処理の本体は PowerShell スクリプト `wslc.ps1` です。`wslc.bat` は、実行ポリシーの設定を
-変更せずに（`-ExecutionPolicy Bypass`）`wslc.ps1` を起動するだけの薄いランチャーで、
+処理の本体は PowerShell スクリプト `run.ps1` です。`run.bat` は、実行ポリシーの設定を
+変更せずに（`-ExecutionPolicy Bypass`）`run.ps1` を起動するだけの薄いランチャーで、
 コマンドプロンプトからそのまま実行できます。PowerShell から直接実行しても構いません。
 
 > **注意:** `wslc` は 2026-06 時点でパブリックプレビュー機能です。コマンドやオプションは
@@ -45,7 +45,7 @@ Microsoft が WSL 2.9.3 以降で提供する **WSL Container (`wslc`)** を使�
 
 ### 使い方
 
-初回セットアップは、エクスプローラで **`wsl-container\wslc.bat` をダブルクリック**するだけでも
+初回セットアップは、エクスプローラで **`wsl-container\run.bat` をダブルクリック**するだけでも
 実行できます（引数無しでの起動を `setup` として扱います）。UAC の昇格ダイアログが表示されるので
 許可してください。処理ログは昇格した別ウィンドウに表示され、どちらのウィンドウも結果を
 確認できるようキー入力待ちで停止します。
@@ -54,30 +54,30 @@ Microsoft が WSL 2.9.3 以降で提供する **WSL Container (`wslc`)** を使�
 
 ```bat
 :: 1. WSL2 をプレリリース版へ更新 (wslc 導入) + usbipd-win 導入 (初回のみ、UAC で自動昇格)
-wsl-container\wslc.bat setup
+wsl-container\run.bat setup
 
 :: 2. イメージのビルド
-wsl-container\wslc.bat build
+wsl-container\run.bat build
 
 :: 3. コンテナ起動 (デタッチ。自動再起動は wslc 非対応)
-wsl-container\wslc.bat up
+wsl-container\run.bat up
 
 :: 起動後、Web UI は http://localhost:40772/ でアクセスできます
 
 :: ログ確認
-wsl-container\wslc.bat logs
+wsl-container\run.bat logs
 
 :: 停止・削除
-wsl-container\wslc.bat down
+wsl-container\run.bat down
 ```
 
 PowerShell から直接実行する場合は次のとおりです。
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File wsl-container\wslc.ps1 setup
+powershell -ExecutionPolicy Bypass -File wsl-container\run.ps1 setup
 ```
 
-サブコマンド一覧は `wsl-container\wslc.bat help` を参照してください。
+サブコマンド一覧は `wsl-container\run.bat help` を参照してください。
 
 ### USB チューナーについて
 
@@ -94,16 +94,16 @@ powershell -ExecutionPolicy Bypass -File wsl-container\wslc.ps1 setup
 
 ```bat
 :: USB デバイス一覧を表示し、対象チューナーの busid を確認する
-wsl-container\wslc.bat usb-list
+wsl-container\run.bat usb-list
 
 :: 対象デバイスを WSL2 へアタッチする (UAC で自動昇格)
-wsl-container\wslc.bat usb-attach 2-3
+wsl-container\run.bat usb-attach 2-3
 
 :: WSL2 側でデバイスを確認する
 wsl -- lsusb
 
 :: 不要になったらアタッチを解除する
-wsl-container\wslc.bat usb-detach 2-3
+wsl-container\run.bat usb-detach 2-3
 ```
 
 環境変数 `USB_DEVICES` は将来 `wslc` が `--device` に対応した際に復帰させる想定で
@@ -118,7 +118,7 @@ wsl-container\wslc.bat usb-detach 2-3
 - **`wslc run` の非対応オプション**: `--cap-add` / `--log-driver` / `--log-opt` /
   `--restart` に対応していないため、Docker / Podman と比べて capability の追加
   （`SYS_ADMIN` / `SYS_NICE`）、ログのローテーション設定、コンテナの自動再起動が
-  行えません。Windows や WSL2 の再起動後は `wsl-container\wslc.bat up` で起動し直してください。
+  行えません。Windows や WSL2 の再起動後は `wsl-container\run.bat up` で起動し直してください。
 - **ホストモードネットワーキング非対応**: `--network host` は「ホスト モード
   ネットワーキングはサポートされていません」として拒否されるため、ポートを `--publish` で
   個別に公開します（既定 `40772:40772`）。Web UI へは

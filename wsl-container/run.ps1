@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-  wslc.ps1 - WSL Container (wslc) を使った Windows 向け Mirakurun セットアップ／起動スクリプト
+  run.ps1 - WSL Container (wslc) を使った Windows 向け Mirakurun セットアップ／起動スクリプト
 
 .DESCRIPTION
   Docker Desktop / Podman Desktop のような GUI アプリも、Podman machine
@@ -49,10 +49,10 @@
   内部フラグ。昇格して再実行されたプロセスに自動付与され、昇格ループを防ぎます。
 
 .EXAMPLE
-  powershell -ExecutionPolicy Bypass -File wsl-container\wslc.ps1 setup
+  powershell -ExecutionPolicy Bypass -File wsl-container\run.ps1 setup
 
 .EXAMPLE
-  powershell -ExecutionPolicy Bypass -File wsl-container\wslc.ps1 usb-attach 2-3
+  powershell -ExecutionPolicy Bypass -File wsl-container\run.ps1 usb-attach 2-3
 
 .NOTES
   環境変数 (実行前に設定):
@@ -98,7 +98,7 @@ param(
 
     [switch] $NoElevate,
 
-    # wslc.bat がダブルクリック起動を検知した際に付与する。
+    # run.bat がダブルクリック起動を検知した際に付与する。
     # 引数無し起動を help ではなく setup として扱った旨を利用者へ知らせる。
     [switch] $FromDoubleClick
 )
@@ -305,7 +305,7 @@ function Get-RunOptions {
 
 function Assert-WslcAvailable {
     if (-not (Test-CommandExists 'wslc')) {
-        Write-Err 'wslc コマンドが見つかりません。先に "wslc.ps1 setup" を実行し、PowerShell を開き直してください。'
+        Write-Err 'wslc コマンドが見つかりません。先に "run.ps1 setup" を実行し、PowerShell を開き直してください。'
         return $false
     }
     return $true
@@ -365,18 +365,18 @@ function Invoke-SetupEnv {
     Write-Info ''
     Write-Info 'セットアップが完了しました。'
     Write-Info 'USB チューナーを使う場合は、以下でアタッチしてください:'
-    Write-Info '  wsl-container\wslc.bat usb-list'
-    Write-Info '  wsl-container\wslc.bat usb-attach <busid>'
+    Write-Info '  wsl-container\run.bat usb-list'
+    Write-Info '  wsl-container\run.bat usb-attach <busid>'
     Write-Info ''
     Write-Info '続いて、以下で Mirakurun イメージのビルドと起動を行ってください:'
-    Write-Info '  wsl-container\wslc.bat build'
-    Write-Info '  wsl-container\wslc.bat up'
+    Write-Info '  wsl-container\run.bat build'
+    Write-Info '  wsl-container\run.bat up'
     return 0
 }
 
 function Invoke-UsbList {
     if (-not (Test-CommandExists 'usbipd')) {
-        Write-Err 'usbipd が見つかりません。先に "wslc.bat setup" を実行して usbipd-win を導入してください。'
+        Write-Err 'usbipd が見つかりません。先に "run.bat setup" を実行して usbipd-win を導入してください。'
         return 1
     }
     & usbipd list
@@ -385,8 +385,8 @@ function Invoke-UsbList {
 
 function Invoke-UsbAttach {
     if ([string]::IsNullOrWhiteSpace($BusId)) {
-        Write-Err 'busid を指定してください。"wslc.bat usb-list" で確認できます。'
-        Write-Err '        例: wsl-container\wslc.bat usb-attach 2-3'
+        Write-Err 'busid を指定してください。"run.bat usb-list" で確認できます。'
+        Write-Err '        例: wsl-container\run.bat usb-attach 2-3'
         return 1
     }
 
@@ -395,7 +395,7 @@ function Invoke-UsbAttach {
     }
 
     if (-not (Test-CommandExists 'usbipd')) {
-        Write-Err 'usbipd が見つかりません。先に "wslc.bat setup" を実行して usbipd-win を導入してください。'
+        Write-Err 'usbipd が見つかりません。先に "run.bat setup" を実行して usbipd-win を導入してください。'
         return 1
     }
 
@@ -419,7 +419,7 @@ function Invoke-UsbAttach {
 function Invoke-UsbDetach {
     if ([string]::IsNullOrWhiteSpace($BusId)) {
         Write-Err 'busid を指定してください。'
-        Write-Err '        例: wsl-container\wslc.bat usb-detach 2-3'
+        Write-Err '        例: wsl-container\run.bat usb-detach 2-3'
         return 1
     }
     if (-not (Test-CommandExists 'usbipd')) {
@@ -442,13 +442,13 @@ function Invoke-Up {
     # 必ずいったんローカル変数へ格納してから渡す。
     $runOpts = Get-RunOptions
     # Docker / Podman の "--restart always" に相当するオプションが wslc run には
-    # ありません。ホストや WSL2 の再起動後は "wslc.bat up" で起動し直します。
+    # ありません。ホストや WSL2 の再起動後は "run.bat up" で起動し直します。
     & wslc run -d @runOpts $Image
     $code = $LASTEXITCODE
     if ($code -eq 0) {
         Write-Info ''
         Write-Info "  起動しました。Web UI: http://localhost:40772/"
-        Write-Warn 'wslc は自動再起動 (--restart always) に対応していません。Windows や WSL2 を再起動した後は "wsl-container\wslc.bat up" で起動し直してください。'
+        Write-Warn 'wslc は自動再起動 (--restart always) に対応していません。Windows や WSL2 を再起動した後は "wsl-container\run.bat up" で起動し直してください。'
     }
     return $code
 }
@@ -507,9 +507,9 @@ function Invoke-Bash {
 }
 
 function Show-Usage {
-    Write-Info 'wslc.ps1 - WSL Container (wslc) を使った Windows 向け Mirakurun セットアップ／起動スクリプト'
+    Write-Info 'run.ps1 - WSL Container (wslc) を使った Windows 向け Mirakurun セットアップ／起動スクリプト'
     Write-Info ''
-    Write-Info '使い方: wsl-container\wslc.bat <command> [busid]'
+    Write-Info '使い方: wsl-container\run.bat <command> [busid]'
     Write-Info ''
     Write-Info 'command:'
     Write-Info '  setup           WSL2 を更新 (wslc 導入) + usbipd-win を導入 (自動昇格)'
@@ -538,13 +538,13 @@ function Show-Usage {
 }
 
 # ---- ダブルクリック起動時の案内 ----------------------------------------------
-# wslc.bat は引数無し (= ダブルクリック) を setup として扱う。利用者には
+# run.bat は引数無し (= ダブルクリック) を setup として扱う。利用者には
 # 何が起きているかと、他のコマンドの実行方法を明示する。
 if ($FromDoubleClick -and -not $NoElevate) {
     Write-Step 'ダブルクリックで起動されたため、setup を実行します。'
     Write-Info '他のコマンドを実行する場合は、コマンドプロンプトから'
-    Write-Info '  wslc.bat <command>'
-    Write-Info 'のように指定してください。使い方は "wslc.bat help" で確認できます。'
+    Write-Info '  run.bat <command>'
+    Write-Info 'のように指定してください。使い方は "run.bat help" で確認できます。'
     Write-Info ''
 }
 
