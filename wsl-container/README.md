@@ -1,38 +1,23 @@
-# container/ ディレクトリについて
+# wsl-container/ ディレクトリについて
 
-Podman（および Podman 互換の `docker` コマンド）で Mirakurun を動かすための一式です。
-`docker/` 配下の `docker-compose.yml` ベースの構成を、podman-compose を使わずに
-素の `podman` コマンドへ翻訳したものです。
+**Windows 上で** Mirakurun をコンテナとして動かすための一式です。コンテナランタイムには
+Microsoft が WSL 2.9.3 以降で提供する **WSL Container (`wslc`)** を使用します。
 
-Windows 向けには、Podman ではなく Microsoft 製の **WSL Container (`wslc`)** を使う
-スクリプトを用意しています。詳細は下記「Windows (CLI only)」を参照してください。
+Linux ホストで動かす場合は、このディレクトリではなく `docker/` 配下の
+`docker-compose.yml` ベースの構成を利用してください。
 
 | ファイル | 用途 |
 | --- | --- |
 | `Containerfile` | イメージビルド定義（`docker/Dockerfile` 相当） |
 | `entrypoint.sh` | コンテナ起動スクリプト |
-| `podman.sh` | Linux 向け操作スクリプト（rootless 運用を想定） |
-| `wslc.ps1` | **Windows (CLI only) 向け**操作スクリプト本体（WSL Container / `wslc` 使用） |
+| `wslc.ps1` | 操作スクリプト本体（WSL Container / `wslc` 使用） |
 | `wslc.bat` | `wslc.ps1` を実行ポリシーに阻まれず起動するためのランチャー |
-| `mirakurun.container` | Linux + systemd (Quadlet) で常駐運用する場合のユニット定義 |
-
-## Linux
-
-`podman.sh` を参照してください（スクリプト先頭のコメントに使い方を記載）。
-
-```sh
-./container/podman.sh build
-./container/podman.sh up
-./container/podman.sh logs
-```
-
-物理チューナー（USB/PCIe）をコンテナへパススルーする場合は Linux ホストでの運用を推奨します。
 
 ## Windows (CLI only, GUI 不使用)
 
 **Docker Desktop / Podman Desktop（GUI アプリ）を使わずに**、コマンドプロンプトだけで
 Mirakurun コンテナの導入から起動までを行うためのスクリプトです。コンテナランタイムには
-Podman ではなく、Microsoft が WSL 2.9.3 以降で提供する **WSL Container (`wslc`)** を使用します
+Microsoft が WSL 2.9.3 以降で提供する **WSL Container (`wslc`)** を使用します
 （[参考記事](https://gihyo.jp/article/2026/06/wsl-container)）。`wslc` は Docker CLI 互換
 （`run` / `build` / `exec` / `logs` 等）のコマンド体系を持つ前提で本スクリプトを実装しています。
 
@@ -45,8 +30,8 @@ Podman ではなく、Microsoft が WSL 2.9.3 以降で提供する **WSL Contai
 >
 > **チューナーは利用できません。** `wslc run` に `--device` 相当のオプションが無いため、
 > USB / PCIe いずれのチューナーもコンテナへパススルーできません。Windows 版は Mirakurun
-> 本体の動作確認や Web UI の確認といった用途を想定しています。実運用は Linux ホストでの
-> `podman.sh` を利用してください。詳細は「[Windows 固有の制約](#windows-固有の制約)」を参照。
+> 本体の動作確認や Web UI の確認といった用途を想定しています。実運用は Linux ホストで
+> `docker/` 配下の構成を利用してください。詳細は「[Windows 固有の制約](#windows-固有の制約)」を参照。
 
 ### 前提条件
 
@@ -60,7 +45,7 @@ Podman ではなく、Microsoft が WSL 2.9.3 以降で提供する **WSL Contai
 
 ### 使い方
 
-初回セットアップは、エクスプローラで **`container\wslc.bat` をダブルクリック**するだけでも
+初回セットアップは、エクスプローラで **`wsl-container\wslc.bat` をダブルクリック**するだけでも
 実行できます（引数無しでの起動を `setup` として扱います）。UAC の昇格ダイアログが表示されるので
 許可してください。処理ログは昇格した別ウィンドウに表示され、どちらのウィンドウも結果を
 確認できるようキー入力待ちで停止します。
@@ -69,28 +54,30 @@ Podman ではなく、Microsoft が WSL 2.9.3 以降で提供する **WSL Contai
 
 ```bat
 :: 1. WSL2 をプレリリース版へ更新 (wslc 導入) + usbipd-win 導入 (初回のみ、UAC で自動昇格)
-container\wslc.bat setup
+wsl-container\wslc.bat setup
 
 :: 2. イメージのビルド
-container\wslc.bat build
+wsl-container\wslc.bat build
 
 :: 3. コンテナ起動 (デタッチ。自動再起動は wslc 非対応)
-container\wslc.bat up
+wsl-container\wslc.bat up
+
+:: 起動後、Web UI は http://localhost:40772/ でアクセスできます
 
 :: ログ確認
-container\wslc.bat logs
+wsl-container\wslc.bat logs
 
 :: 停止・削除
-container\wslc.bat down
+wsl-container\wslc.bat down
 ```
 
 PowerShell から直接実行する場合は次のとおりです。
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File container\wslc.ps1 setup
+powershell -ExecutionPolicy Bypass -File wsl-container\wslc.ps1 setup
 ```
 
-サブコマンド一覧は `container\wslc.bat help` を参照してください。
+サブコマンド一覧は `wsl-container\wslc.bat help` を参照してください。
 
 ### USB チューナーについて
 
@@ -98,7 +85,7 @@ powershell -ExecutionPolicy Bypass -File container\wslc.ps1 setup
 > `wslc run` には Docker/Podman の `--device` に相当するオプションが存在しないため
 > （`wslc run --help` で確認: WSL 2.9.3 時点）、WSL2 へアタッチしたデバイスを
 > コンテナへ渡す手段がありません。チューナーを使った実運用が必要な場合は、
-> Linux ホストで `podman.sh` を利用してください。
+> Linux ホストで `docker/` 配下の構成を利用してください。
 
 `usb-list` / `usb-attach` / `usb-detach` は WSL2 ディストリビューションへの
 アタッチ操作として引き続き利用できます（[usbipd-win](https://github.com/dorssel/usbipd-win)
@@ -107,16 +94,16 @@ powershell -ExecutionPolicy Bypass -File container\wslc.ps1 setup
 
 ```bat
 :: USB デバイス一覧を表示し、対象チューナーの busid を確認する
-container\wslc.bat usb-list
+wsl-container\wslc.bat usb-list
 
 :: 対象デバイスを WSL2 へアタッチする (UAC で自動昇格)
-container\wslc.bat usb-attach 2-3
+wsl-container\wslc.bat usb-attach 2-3
 
 :: WSL2 側でデバイスを確認する
 wsl -- lsusb
 
 :: 不要になったらアタッチを解除する
-container\wslc.bat usb-detach 2-3
+wsl-container\wslc.bat usb-detach 2-3
 ```
 
 環境変数 `USB_DEVICES` は将来 `wslc` が `--device` に対応した際に復帰させる想定で
@@ -127,11 +114,16 @@ container\wslc.bat usb-detach 2-3
 - **チューナーは USB / PCIe いずれも非対応**: `wslc run` に `--device` 相当のオプションが
   無いため、USB チューナーを WSL2 へアタッチしてもコンテナへは渡せません。PT3/PX-W3PE 等の
   PCIe 接続チューナーは WSL2 自体がパススルーに対応していません。チューナーを使う場合は
-  Linux ホスト（`podman.sh` / `mirakurun.container`）を利用してください。
+  Linux ホストで `docker/` 配下の構成を利用してください。
 - **`wslc run` の非対応オプション**: `--cap-add` / `--log-driver` / `--log-opt` /
-  `--restart` に対応していないため、`podman.sh` と比べて capability の追加
+  `--restart` に対応していないため、Docker / Podman と比べて capability の追加
   （`SYS_ADMIN` / `SYS_NICE`）、ログのローテーション設定、コンテナの自動再起動が
-  行えません。Windows や WSL2 の再起動後は `container\wslc.bat up` で起動し直してください。
+  行えません。Windows や WSL2 の再起動後は `wsl-container\wslc.bat up` で起動し直してください。
+- **ホストモードネットワーキング非対応**: `--network host` は「ホスト モード
+  ネットワーキングはサポートされていません」として拒否されるため、ポートを `--publish` で
+  個別に公開します（既定 `40772:40772`）。Web UI へは
+  `http://localhost:40772/` でアクセスしてください。公開ポートは環境変数
+  `PUBLISH_PORTS` で変更できます。
 - **USB アタッチは揮発性**: usbipd-win でアタッチしたデバイスは Windows 再起動や USB の
   抜き差しの度に再アタッチが必要です。恒常運用する場合は `usbipd bind --persistent` や
   タスクスケジューラでの自動アタッチを検討してください。
@@ -146,5 +138,6 @@ container\wslc.bat usb-detach 2-3
 | `MIRAKURUN_VOLUMES_DIR` | `%USERPROFILE%\mirakurun\volumes` | ボリューム配置先 |
 | `MIRAKURUN_IMAGE_TAG` | `latest` | イメージタグ |
 | `USB_DEVICES` | `/dev/bus/usb` | 現時点では未使用（`wslc` が `--device` 非対応のため） |
+| `PUBLISH_PORTS` | `40772:40772` | 公開するポート（空白区切りで複数可）。例: `40772:40772 9229:9229` |
 | `DISABLE_PCSCD` | `0` | `1` でコンテナ内 pcscd を無効化 |
 | `DISABLE_B25_TEST` | `0` | `1` で arib-b25-stream-test の導入をスキップ |

@@ -62,12 +62,12 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-ADD container/entrypoint.sh /app/container/entrypoint.sh
+ADD wsl-container/entrypoint.sh /app/wsl-container/entrypoint.sh
 
 # build ステージから recpt1 / libarib25 の成果物をコピー
 COPY --from=build /dist/usr/local/ /usr/local/
 RUN ldconfig
 
 COPY --from=build /app /app
-CMD ["/app/container/entrypoint.sh"]
+CMD ["/app/wsl-container/entrypoint.sh"]
 EXPOSE 40772 9229

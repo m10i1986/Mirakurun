@@ -1,6 +1,6 @@
 @echo off
 rem =============================================================================
-rem wslc.bat - Launcher for container\wslc.ps1
+rem wslc.bat - Launcher for wsl-container\wslc.ps1
 rem
 rem All logic lives in wslc.ps1. This wrapper only exists so the script can be
 rem started from Command Prompt or by double-clicking, without relaxing the
@@ -17,7 +17,7 @@ rem UTF-8 would be mojibake under the CP932 console default. All user-facing
 rem Japanese messages therefore live in wslc.ps1, saved as UTF-8 with BOM.
 rem
 rem Usage:
-rem   container\wslc.bat ^<command^> [busid]
+rem   wsl-container\wslc.bat ^<command^> [busid]
 rem
 rem When launched by double-click there are no arguments, so "setup" is run
 rem automatically and the window is held open at the end.

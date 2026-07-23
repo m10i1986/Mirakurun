@@ -18,10 +18,10 @@
   無いためです ("wslc run --help" で確認: WSL 2.9.3 時点)。
   usb-list / usb-attach / usb-detach は WSL2 へのアタッチ手段として残して
   ありますが、コンテナ内の Mirakurun からチューナーは見えません。
-  USB チューナーを使う場合は Linux ホスト (container/podman.sh) を利用して
+  USB チューナーを使う場合は Linux ホストで docker/ 配下の構成を利用して
   ください。
 
-  Linux 向けの container/podman.sh に対応する Windows 版です。
+  Linux 向けの docker/ 配下の構成に対応する Windows 版です。
 
   管理者権限が必要なコマンド (setup / usb-attach) は UAC により自動昇格するため、
   あらかじめ管理者としてプロンプトを開いておく必要はありません。
@@ -49,10 +49,10 @@
   内部フラグ。昇格して再実行されたプロセスに自動付与され、昇格ループを防ぎます。
 
 .EXAMPLE
-  powershell -ExecutionPolicy Bypass -File container\wslc.ps1 setup
+  powershell -ExecutionPolicy Bypass -File wsl-container\wslc.ps1 setup
 
 .EXAMPLE
-  powershell -ExecutionPolicy Bypass -File container\wslc.ps1 usb-attach 2-3
+  powershell -ExecutionPolicy Bypass -File wsl-container\wslc.ps1 usb-attach 2-3
 
 .NOTES
   環境変数 (実行前に設定):
@@ -61,6 +61,10 @@
     USB_DEVICES             現時点では未使用 (既定: /dev/bus/usb)。wslc run が
                             --device に対応していないため、コンテナへは渡せません。
                             将来 wslc が対応した際に復帰させる想定で残しています。
+    PUBLISH_PORTS           コンテナへ公開するポートを空白区切りで指定
+                            (既定: 40772:40772)。wslc がホストモードネット
+                            ワーキング非対応のため --publish で公開します。
+                            例: set PUBLISH_PORTS=40772:40772 9229:9229
     DISABLE_PCSCD           1 でコンテナ内 pcscd を無効化 (既定: 0)
     DISABLE_B25_TEST        1 で arib-b25-stream-test の導入をスキップ (既定: 0)
 
@@ -69,14 +73,17 @@
       usbipd-win で WSL2 までアタッチできますが、wslc run に --device 相当の
       オプションが無いためコンテナへ渡せません。PT3/PX-W3PE 等の PCIe 接続
       チューナーは WSL2 自体がパススルーに対応していません。
-      チューナーを使う場合は Linux ホスト (container/podman.sh) を利用して
+      チューナーを使う場合は Linux ホストで docker/ 配下の構成を利用して
       ください。
     - usbipd-win でアタッチしたデバイスは Windows 再起動や USB の抜き差しの度に
       再アタッチが必要です。恒常運用する場合は "usbipd bind --persistent" や
       タスクスケジューラでの自動アタッチを検討してください。
     - wslc run は --cap-add / --log-driver / --log-opt / --restart に対応して
-      いません。このため podman.sh と比べ、capability 追加・ログローテーション
-      設定・コンテナの自動再起動が行えません。
+      いません。このため Docker / Podman と比べ、capability 追加・ログ
+      ローテーション設定・コンテナの自動再起動が行えません。
+    - wslc はホストモードネットワーキング (--network host) に対応していません。
+      ポートは --publish で個別に公開します
+      (既定: 40772)。Web UI へは http://localhost:40772/ でアクセスします。
     - wslc はプレビュー機能です。正式リリースまでにコマンドやオプションが
       変更される可能性があります。
 #>
@@ -115,7 +122,7 @@ $ScriptPath  = $MyInvocation.MyCommand.Path
 $ScriptDir   = Split-Path -Parent $ScriptPath
 $ProjectRoot = (Resolve-Path (Join-Path $ScriptDir '..')).Path
 
-# ---- 設定値 (container/podman.sh と対応) -------------------------------------
+# ---- 設定値 (docker/docker-compose.yml と対応) -------------------------------
 function Get-EnvOrDefault {
     param([string] $Name, [string] $Default)
     $value = [Environment]::GetEnvironmentVariable($Name)
@@ -129,6 +136,9 @@ $Dockerfile     = Get-EnvOrDefault 'DOCKERFILE'            'Containerfile'
 # 現時点では未使用。wslc run が --device に対応していないため Get-RunOptions から
 # 参照していません。将来 wslc が対応した際に復帰させる想定で残しています。
 $UsbDevices     = Get-EnvOrDefault 'USB_DEVICES'           '/dev/bus/usb'
+# wslc がホストモードネットワーキング非対応のため --publish で公開するポート。
+# 40772 は Mirakurun の API / Web UI。9229 (Node デバッガ) は既定では公開しません。
+$PublishPorts   = Get-EnvOrDefault 'PUBLISH_PORTS'         '40772:40772'
 $DisablePcscd   = Get-EnvOrDefault 'DISABLE_PCSCD'         '0'
 $DisableB25Test = Get-EnvOrDefault 'DISABLE_B25_TEST'      '0'
 
@@ -239,11 +249,12 @@ function Wait-ForKeyIfElevatedChild {
     try { [void] $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown') } catch { }
 }
 
-# ---- 共通 run オプションの組み立て (container/podman.sh と対応) --------------
+# ---- 共通 run オプションの組み立て (docker/docker-compose.yml と対応) --------
 <#
   wslc run がサポートするオプションのみで構成します。
-  podman.sh には存在するものの wslc run が受け付けないため、意図的に外して
-  いるオプションは以下の通りです ("wslc run --help" で確認: WSL 2.9.3 時点)。
+  Docker / Podman には存在するものの wslc run が受け付けないため、意図的に
+  外しているオプションは以下の通りです
+  ("wslc run --help" で確認: WSL 2.9.3 時点)。
 
     --cap-add SYS_ADMIN / SYS_NICE
         wslc に capability を追加する手段がありません。Mirakurun 本体の動作に
@@ -254,23 +265,35 @@ function Wait-ForKeyIfElevatedChild {
     --device
         デバイスを個別にパススルーする手段がありません。詳細は下の
         USB チューナーに関する注記を参照してください。
+    --network host
+        wslc は "ホスト モード ネットワーキングはサポートされていません" と
+        して拒否します。代わりに --publish でポートを個別に公開します。
+        これに伴い DOCKER_NETWORK=host も渡しません (下記参照)。
 
-  いずれも wslc 側が対応した時点で podman.sh と揃え直せます。
+  いずれも wslc 側が対応した時点で Docker / Podman 版と揃え直せます。
 #>
 function Get-RunOptions {
     $opts = @(
         '--name', $Container
-        '--network', 'host'
         '--tmpfs', '/tmp'
         '--env', 'TZ=Asia/Tokyo'
         '--env', "DISABLE_PCSCD=$DisablePcscd"
         '--env', "DISABLE_B25_TEST=$DisableB25Test"
-        '--env', 'DOCKER_NETWORK=host'
         '--volume', "${VolumesDir}\run:/var/run"
         '--volume', "${VolumesDir}\opt:/opt"
         '--volume', "${VolumesDir}\config:/app-config"
         '--volume', "${VolumesDir}\data:/app-data"
     )
+
+    # ホストモードが使えないため、ポートを個別に公開します。
+    #
+    # DOCKER_NETWORK は意図的に設定していません。src/Mirakurun/config.ts では
+    # DOCKER_NETWORK が "host" 以外のとき port=40772 / disableIPv6=true を
+    # 強制します。これはまさにブリッジ接続時に必要な設定であり、--publish で
+    # 公開するポートとも一致するため、未設定のままとするのが正しい挙動です。
+    foreach ($port in ($PublishPorts -split '\s+' | Where-Object { $_ })) {
+        $opts += @('--publish', $port)
+    }
 
     # USB チューナーのパススルーは現時点では実現できません。
     # usbipd-win で WSL2 へアタッチするところまでは従来どおり動作しますが、
@@ -342,12 +365,12 @@ function Invoke-SetupEnv {
     Write-Info ''
     Write-Info 'セットアップが完了しました。'
     Write-Info 'USB チューナーを使う場合は、以下でアタッチしてください:'
-    Write-Info '  container\wslc.bat usb-list'
-    Write-Info '  container\wslc.bat usb-attach <busid>'
+    Write-Info '  wsl-container\wslc.bat usb-list'
+    Write-Info '  wsl-container\wslc.bat usb-attach <busid>'
     Write-Info ''
     Write-Info '続いて、以下で Mirakurun イメージのビルドと起動を行ってください:'
-    Write-Info '  container\wslc.bat build'
-    Write-Info '  container\wslc.bat up'
+    Write-Info '  wsl-container\wslc.bat build'
+    Write-Info '  wsl-container\wslc.bat up'
     return 0
 }
 
@@ -363,7 +386,7 @@ function Invoke-UsbList {
 function Invoke-UsbAttach {
     if ([string]::IsNullOrWhiteSpace($BusId)) {
         Write-Err 'busid を指定してください。"wslc.bat usb-list" で確認できます。'
-        Write-Err '        例: container\wslc.bat usb-attach 2-3'
+        Write-Err '        例: wsl-container\wslc.bat usb-attach 2-3'
         return 1
     }
 
@@ -389,14 +412,14 @@ function Invoke-UsbAttach {
     Write-Info ''
     Write-Warn 'wslc run には --device 相当のオプションが無いため、アタッチしたチューナーをコンテナへ渡すことは現時点ではできません。'
     Write-Info '       WSL2 上ではデバイスを認識しますが、コンテナ内の Mirakurun からは利用できません。'
-    Write-Info '       USB チューナーを使う場合は、当面 Linux ホストで container/podman.sh を利用してください。'
+    Write-Info '       USB チューナーを使う場合は、当面 Linux ホストで docker/ 配下の構成を利用してください。'
     return 0
 }
 
 function Invoke-UsbDetach {
     if ([string]::IsNullOrWhiteSpace($BusId)) {
         Write-Err 'busid を指定してください。'
-        Write-Err '        例: container\wslc.bat usb-detach 2-3'
+        Write-Err '        例: wsl-container\wslc.bat usb-detach 2-3'
         return 1
     }
     if (-not (Test-CommandExists 'usbipd')) {
@@ -418,12 +441,14 @@ function Invoke-Up {
     # splat には変数が必要 (@runOpts)。@(...) だと配列が 1 引数に潰れてしまうため、
     # 必ずいったんローカル変数へ格納してから渡す。
     $runOpts = Get-RunOptions
-    # podman.sh の "--restart always" に相当するオプションが wslc run には
+    # Docker / Podman の "--restart always" に相当するオプションが wslc run には
     # ありません。ホストや WSL2 の再起動後は "wslc.bat up" で起動し直します。
     & wslc run -d @runOpts $Image
     $code = $LASTEXITCODE
     if ($code -eq 0) {
-        Write-Warn 'wslc は自動再起動 (--restart always) に対応していません。Windows や WSL2 を再起動した後は "container\wslc.bat up" で起動し直してください。'
+        Write-Info ''
+        Write-Info "  起動しました。Web UI: http://localhost:40772/"
+        Write-Warn 'wslc は自動再起動 (--restart always) に対応していません。Windows や WSL2 を再起動した後は "wsl-container\wslc.bat up" で起動し直してください。'
     }
     return $code
 }
@@ -484,7 +509,7 @@ function Invoke-Bash {
 function Show-Usage {
     Write-Info 'wslc.ps1 - WSL Container (wslc) を使った Windows 向け Mirakurun セットアップ／起動スクリプト'
     Write-Info ''
-    Write-Info '使い方: container\wslc.bat <command> [busid]'
+    Write-Info '使い方: wsl-container\wslc.bat <command> [busid]'
     Write-Info ''
     Write-Info 'command:'
     Write-Info '  setup           WSL2 を更新 (wslc 導入) + usbipd-win を導入 (自動昇格)'
@@ -506,6 +531,7 @@ function Show-Usage {
     Write-Info '  MIRAKURUN_VOLUMES_DIR   ボリューム配置先 (既定: %USERPROFILE%\mirakurun\volumes)'
     Write-Info '  MIRAKURUN_IMAGE_TAG     イメージタグ (既定: latest)'
     Write-Info '  USB_DEVICES             現時点では未使用 (wslc が --device 非対応のため)'
+    Write-Info '  PUBLISH_PORTS           公開するポート (既定: 40772:40772)'
     Write-Info '  DISABLE_PCSCD           1 でコンテナ内 pcscd を無効化 (既定: 0)'
     Write-Info '  DISABLE_B25_TEST        1 で arib-b25-stream-test の導入をスキップ (既定: 0)'
     return 0
