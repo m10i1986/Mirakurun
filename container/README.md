@@ -42,6 +42,11 @@ Podman ではなく、Microsoft が WSL 2.9.3 以降で提供する **WSL Contai
 
 > **注意:** `wslc` は 2026-06 時点でパブリックプレビュー機能です。コマンドやオプションは
 > 正式リリースまでに変更される可能性があります。
+>
+> **チューナーは利用できません。** `wslc run` に `--device` 相当のオプションが無いため、
+> USB / PCIe いずれのチューナーもコンテナへパススルーできません。Windows 版は Mirakurun
+> 本体の動作確認や Web UI の確認といった用途を想定しています。実運用は Linux ホストでの
+> `podman.sh` を利用してください。詳細は「[Windows 固有の制約](#windows-固有の制約)」を参照。
 
 ### 前提条件
 
@@ -69,7 +74,7 @@ container\wslc.bat setup
 :: 2. イメージのビルド
 container\wslc.bat build
 
-:: 3. コンテナ起動 (デタッチ, restart=always)
+:: 3. コンテナ起動 (デタッチ。自動再起動は wslc 非対応)
 container\wslc.bat up
 
 :: ログ確認
@@ -87,43 +92,46 @@ powershell -ExecutionPolicy Bypass -File container\wslc.ps1 setup
 
 サブコマンド一覧は `container\wslc.bat help` を参照してください。
 
-### USB チューナーを使う
+### USB チューナーについて
 
-`wslc` は WSL2 上で直接コンテナを実行するため、USB デバイスを WSL2 ディストリビューションへ
-アタッチすれば、Linux のデバイスファイルとしてそのままコンテナへ `--device` で渡せます。
-デバイスの WSL2 へのアタッチには Microsoft 公式の [usbipd-win](https://github.com/dorssel/usbipd-win)
-を使用します（`setup` 実行時に自動導入されます）。
+> **現時点ではコンテナへパススルーできません。**
+> `wslc run` には Docker/Podman の `--device` に相当するオプションが存在しないため
+> （`wslc run --help` で確認: WSL 2.9.3 時点）、WSL2 へアタッチしたデバイスを
+> コンテナへ渡す手段がありません。チューナーを使った実運用が必要な場合は、
+> Linux ホストで `podman.sh` を利用してください。
+
+`usb-list` / `usb-attach` / `usb-detach` は WSL2 ディストリビューションへの
+アタッチ操作として引き続き利用できます（[usbipd-win](https://github.com/dorssel/usbipd-win)
+を使用。`setup` 実行時に自動導入されます）。WSL2 上ではデバイスを認識しますが、
+コンテナ内の Mirakurun からは見えません。
 
 ```bat
-:: 1. USB デバイス一覧を表示し、対象チューナーの busid を確認する
+:: USB デバイス一覧を表示し、対象チューナーの busid を確認する
 container\wslc.bat usb-list
 
-:: 2. 対象デバイスを WSL2 へアタッチする (UAC で自動昇格)
+:: 対象デバイスを WSL2 へアタッチする (UAC で自動昇格)
 container\wslc.bat usb-attach 2-3
 
-:: 3. WSL2 側でデバイスを確認する (任意)
+:: WSL2 側でデバイスを確認する
 wsl -- lsusb
-
-:: 4. コンテナ起動 (既定で /dev/bus/usb を渡す)
-container\wslc.bat up
 
 :: 不要になったらアタッチを解除する
 container\wslc.bat usb-detach 2-3
 ```
 
-コンテナへ渡すデバイスパスは環境変数 `USB_DEVICES`（既定 `/dev/bus/usb`）で変更できます。
-複数指定する場合は空白区切りで指定してください。
-
-```bat
-set USB_DEVICES=/dev/bus/usb /dev/dvb
-container\wslc.bat up
-```
+環境変数 `USB_DEVICES` は将来 `wslc` が `--device` に対応した際に復帰させる想定で
+残していますが、現時点では参照されません。
 
 ### Windows 固有の制約
 
-- **PCIe デバイスは非対応**: usbipd-win は USB デバイスのみが対象のため、PT3/PX-W3U4 等の
-  PCIe 接続チューナーはこの方式ではパススルーできません。PCIe チューナーが必要な場合は
+- **チューナーは USB / PCIe いずれも非対応**: `wslc run` に `--device` 相当のオプションが
+  無いため、USB チューナーを WSL2 へアタッチしてもコンテナへは渡せません。PT3/PX-W3PE 等の
+  PCIe 接続チューナーは WSL2 自体がパススルーに対応していません。チューナーを使う場合は
   Linux ホスト（`podman.sh` / `mirakurun.container`）を利用してください。
+- **`wslc run` の非対応オプション**: `--cap-add` / `--log-driver` / `--log-opt` /
+  `--restart` に対応していないため、`podman.sh` と比べて capability の追加
+  （`SYS_ADMIN` / `SYS_NICE`）、ログのローテーション設定、コンテナの自動再起動が
+  行えません。Windows や WSL2 の再起動後は `container\wslc.bat up` で起動し直してください。
 - **USB アタッチは揮発性**: usbipd-win でアタッチしたデバイスは Windows 再起動や USB の
   抜き差しの度に再アタッチが必要です。恒常運用する場合は `usbipd bind --persistent` や
   タスクスケジューラでの自動アタッチを検討してください。
@@ -137,6 +145,6 @@ container\wslc.bat up
 | --- | --- | --- |
 | `MIRAKURUN_VOLUMES_DIR` | `%USERPROFILE%\mirakurun\volumes` | ボリューム配置先 |
 | `MIRAKURUN_IMAGE_TAG` | `latest` | イメージタグ |
-| `USB_DEVICES` | `/dev/bus/usb` | コンテナへ渡す USB デバイスパス（空白区切りで複数可） |
+| `USB_DEVICES` | `/dev/bus/usb` | 現時点では未使用（`wslc` が `--device` 非対応のため） |
 | `DISABLE_PCSCD` | `0` | `1` でコンテナ内 pcscd を無効化 |
 | `DISABLE_B25_TEST` | `0` | `1` で arib-b25-stream-test の導入をスキップ |

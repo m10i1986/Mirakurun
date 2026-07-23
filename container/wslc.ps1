@@ -13,10 +13,13 @@
   2026-06 時点のパブリックプレビュー情報に基づいているため、
   正式リリースまでにコマンドやオプションが変更される可能性があります。
 
-  USB チューナーは usbipd-win で WSL2 へアタッチし、コンテナへパススルーします。
-  wslc は WSL2 上で直接コンテナを実行する (Podman machine のような追加の VM 層が
-  ない) ため、usbipd でアタッチしたデバイスは通常の Linux デバイスとして見え、
-  --device でそのまま渡せます。
+  USB チューナーは usbipd-win で WSL2 へアタッチできますが、コンテナへの
+  パススルーは現時点では行えません。wslc run に --device 相当のオプションが
+  無いためです ("wslc run --help" で確認: WSL 2.9.3 時点)。
+  usb-list / usb-attach / usb-detach は WSL2 へのアタッチ手段として残して
+  ありますが、コンテナ内の Mirakurun からチューナーは見えません。
+  USB チューナーを使う場合は Linux ホスト (container/podman.sh) を利用して
+  ください。
 
   Linux 向けの container/podman.sh に対応する Windows 版です。
 
@@ -29,7 +32,7 @@
   usb-attach        USB デバイスを WSL2 へアタッチ (自動昇格)
   usb-detach        USB デバイスのアタッチを解除
   build             イメージをビルド
-  up                コンテナをデタッチ起動 (restart=always)
+  up                コンテナをデタッチ起動 (自動再起動は非対応)
   down              コンテナを停止・削除
   restart           コンテナを再起動 (down + up)
   rebuild           build + down + up を連続実行
@@ -55,19 +58,25 @@
   環境変数 (実行前に設定):
     MIRAKURUN_VOLUMES_DIR   ボリューム配置先 (既定: %USERPROFILE%\mirakurun\volumes)
     MIRAKURUN_IMAGE_TAG     イメージタグ (既定: latest)
-    USB_DEVICES             コンテナへ渡す USB デバイスパスを空白区切りで指定
-                            (既定: /dev/bus/usb)。usb-attach 後、WSL2 内の実際の
-                            デバイスパスは `wsl -- lsusb` 等で確認してください。
+    USB_DEVICES             現時点では未使用 (既定: /dev/bus/usb)。wslc run が
+                            --device に対応していないため、コンテナへは渡せません。
+                            将来 wslc が対応した際に復帰させる想定で残しています。
     DISABLE_PCSCD           1 でコンテナ内 pcscd を無効化 (既定: 0)
     DISABLE_B25_TEST        1 で arib-b25-stream-test の導入をスキップ (既定: 0)
 
   Windows 固有の制約:
-    - USB チューナーは usbipd-win 経由で WSL2 へアタッチします。PT3/PX-W3U4 等の
-      PCIe 接続チューナーはこの方式ではパススルーできません。PCIe チューナーが
-      必要な場合は Linux ホスト (container/podman.sh) を利用してください。
+    - チューナーは USB / PCIe いずれもコンテナへパススルーできません。USB は
+      usbipd-win で WSL2 までアタッチできますが、wslc run に --device 相当の
+      オプションが無いためコンテナへ渡せません。PT3/PX-W3PE 等の PCIe 接続
+      チューナーは WSL2 自体がパススルーに対応していません。
+      チューナーを使う場合は Linux ホスト (container/podman.sh) を利用して
+      ください。
     - usbipd-win でアタッチしたデバイスは Windows 再起動や USB の抜き差しの度に
       再アタッチが必要です。恒常運用する場合は "usbipd bind --persistent" や
       タスクスケジューラでの自動アタッチを検討してください。
+    - wslc run は --cap-add / --log-driver / --log-opt / --restart に対応して
+      いません。このため podman.sh と比べ、capability 追加・ログローテーション
+      設定・コンテナの自動再起動が行えません。
     - wslc はプレビュー機能です。正式リリースまでにコマンドやオプションが
       変更される可能性があります。
 #>
@@ -117,6 +126,8 @@ function Get-EnvOrDefault {
 $ImageTag       = Get-EnvOrDefault 'MIRAKURUN_IMAGE_TAG'   'latest'
 $VolumesDir     = Get-EnvOrDefault 'MIRAKURUN_VOLUMES_DIR' (Join-Path $env:USERPROFILE 'mirakurun\volumes')
 $Dockerfile     = Get-EnvOrDefault 'DOCKERFILE'            'Containerfile'
+# 現時点では未使用。wslc run が --device に対応していないため Get-RunOptions から
+# 参照していません。将来 wslc が対応した際に復帰させる想定で残しています。
 $UsbDevices     = Get-EnvOrDefault 'USB_DEVICES'           '/dev/bus/usb'
 $DisablePcscd   = Get-EnvOrDefault 'DISABLE_PCSCD'         '0'
 $DisableB25Test = Get-EnvOrDefault 'DISABLE_B25_TEST'      '0'
@@ -229,15 +240,28 @@ function Wait-ForKeyIfElevatedChild {
 }
 
 # ---- 共通 run オプションの組み立て (container/podman.sh と対応) --------------
+<#
+  wslc run がサポートするオプションのみで構成します。
+  podman.sh には存在するものの wslc run が受け付けないため、意図的に外して
+  いるオプションは以下の通りです ("wslc run --help" で確認: WSL 2.9.3 時点)。
+
+    --cap-add SYS_ADMIN / SYS_NICE
+        wslc に capability を追加する手段がありません。Mirakurun 本体の動作に
+        必須ではないため省略します。
+    --log-driver / --log-opt
+        ログドライバを選択できません。ログは wslc の既定動作に従います
+        (ローテーション設定は不可)。
+    --device
+        デバイスを個別にパススルーする手段がありません。詳細は下の
+        USB チューナーに関する注記を参照してください。
+
+  いずれも wslc 側が対応した時点で podman.sh と揃え直せます。
+#>
 function Get-RunOptions {
     $opts = @(
         '--name', $Container
         '--network', 'host'
-        '--cap-add', 'SYS_ADMIN'
-        '--cap-add', 'SYS_NICE'
         '--tmpfs', '/tmp'
-        '--log-driver', 'json-file'
-        '--log-opt', 'max-size=10m'
         '--env', 'TZ=Asia/Tokyo'
         '--env', "DISABLE_PCSCD=$DisablePcscd"
         '--env', "DISABLE_B25_TEST=$DisableB25Test"
@@ -248,11 +272,11 @@ function Get-RunOptions {
         '--volume', "${VolumesDir}\data:/app-data"
     )
 
-    # USB チューナー: usbipd-win で WSL2 へアタッチしたデバイスパスを --device で渡す
-    foreach ($dev in ($UsbDevices -split '\s+' | Where-Object { $_ })) {
-        $opts += @('--device', $dev)
-    }
-
+    # USB チューナーのパススルーは現時点では実現できません。
+    # usbipd-win で WSL2 へアタッチするところまでは従来どおり動作しますが、
+    # wslc run に --device 相当のオプションが無いため、アタッチしたデバイスを
+    # コンテナへ渡せません。$UsbDevices は将来 wslc が対応した際に復帰させる
+    # ため設定値としては残していますが、run オプションには反映しません。
     return $opts
 }
 
@@ -362,6 +386,10 @@ function Invoke-UsbAttach {
     }
 
     Write-Info "  アタッチしました (busid=$BusId)。WSL2 内で `"wsl -- lsusb`" 等を実行して確認してください。"
+    Write-Info ''
+    Write-Warn 'wslc run には --device 相当のオプションが無いため、アタッチしたチューナーをコンテナへ渡すことは現時点ではできません。'
+    Write-Info '       WSL2 上ではデバイスを認識しますが、コンテナ内の Mirakurun からは利用できません。'
+    Write-Info '       USB チューナーを使う場合は、当面 Linux ホストで container/podman.sh を利用してください。'
     return 0
 }
 
@@ -390,8 +418,14 @@ function Invoke-Up {
     # splat には変数が必要 (@runOpts)。@(...) だと配列が 1 引数に潰れてしまうため、
     # 必ずいったんローカル変数へ格納してから渡す。
     $runOpts = Get-RunOptions
-    & wslc run -d --restart always @runOpts $Image
-    return $LASTEXITCODE
+    # podman.sh の "--restart always" に相当するオプションが wslc run には
+    # ありません。ホストや WSL2 の再起動後は "wslc.bat up" で起動し直します。
+    & wslc run -d @runOpts $Image
+    $code = $LASTEXITCODE
+    if ($code -eq 0) {
+        Write-Warn 'wslc は自動再起動 (--restart always) に対応していません。Windows や WSL2 を再起動した後は "container\wslc.bat up" で起動し直してください。'
+    }
+    return $code
 }
 
 function Invoke-Run {
@@ -461,7 +495,7 @@ function Show-Usage {
     Write-Info '  setup-container セットアップ用に一度だけ起動 (SETUP=true, --rm)'
     Write-Info '  run             一度だけ起動 (--rm)'
     Write-Info '  debug           デバッグモードで一度だけ起動 (DEBUG=true, --rm)'
-    Write-Info '  up              コンテナをデタッチ起動 (restart=always)'
+    Write-Info '  up              コンテナをデタッチ起動 (自動再起動は非対応)'
     Write-Info '  down            コンテナを停止・削除'
     Write-Info '  restart         コンテナを再起動 (down + up)'
     Write-Info '  rebuild         build + down + up を連続実行'
@@ -471,7 +505,7 @@ function Show-Usage {
     Write-Info '環境変数:'
     Write-Info '  MIRAKURUN_VOLUMES_DIR   ボリューム配置先 (既定: %USERPROFILE%\mirakurun\volumes)'
     Write-Info '  MIRAKURUN_IMAGE_TAG     イメージタグ (既定: latest)'
-    Write-Info '  USB_DEVICES             コンテナへ渡す USB デバイスパス (既定: /dev/bus/usb)'
+    Write-Info '  USB_DEVICES             現時点では未使用 (wslc が --device 非対応のため)'
     Write-Info '  DISABLE_PCSCD           1 でコンテナ内 pcscd を無効化 (既定: 0)'
     Write-Info '  DISABLE_B25_TEST        1 で arib-b25-stream-test の導入をスキップ (既定: 0)'
     return 0
