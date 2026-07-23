@@ -432,8 +432,22 @@ function Invoke-UsbDetach {
 
 function Invoke-Build {
     if (-not (Assert-WslcAvailable)) { return 1 }
-    & wslc build -t $Image -f (Join-Path $ScriptDir $Dockerfile) $ProjectRoot
-    return $LASTEXITCODE
+    $dockerfilePath = Join-Path $ScriptDir $Dockerfile
+    Write-Step "[ビルド] イメージ '$Image' をビルドしています..."
+    Write-Info "  Containerfile: $dockerfilePath"
+    Write-Info "  コンテキスト  : $ProjectRoot"
+    Write-Info '  (ビルドログをそのまま表示します。完了まで数分かかる場合があります)'
+    # wslc build の進捗ログはそのまま画面へ流れる。
+    & wslc build -t $Image -f $dockerfilePath $ProjectRoot
+    $code = $LASTEXITCODE
+    if ($code -eq 0) {
+        Write-Info ''
+        Write-Info "  ビルドが完了しました: $Image"
+    }
+    else {
+        Write-Err "ビルドに失敗しました (終了コード $code)。上の wslc の出力を確認してください。"
+    }
+    return $code
 }
 
 function Invoke-Up {
@@ -441,14 +455,23 @@ function Invoke-Up {
     # splat には変数が必要 (@runOpts)。@(...) だと配列が 1 引数に潰れてしまうため、
     # 必ずいったんローカル変数へ格納してから渡す。
     $runOpts = Get-RunOptions
+    Write-Step "[起動] イメージ '$Image' をデタッチ起動しています..."
     # Docker / Podman の "--restart always" に相当するオプションが wslc run には
     # ありません。ホストや WSL2 の再起動後は "run.bat up" で起動し直します。
+    # wslc run -d の出力 (コンテナID) はそのまま画面へ表示されます。
     & wslc run -d @runOpts $Image
     $code = $LASTEXITCODE
     if ($code -eq 0) {
+        # デタッチ起動は run コマンド自体が即座に返るため、実際に起動したかは
+        # wslc ps で確認して結果を見せる。
+        Write-Step '[確認] 起動状態を確認しています (wslc ps)...'
+        & wslc ps
         Write-Info ''
         Write-Info "  起動しました。Web UI: http://localhost:40772/"
         Write-Warn 'wslc は自動再起動 (--restart always) に対応していません。Windows や WSL2 を再起動した後は "wsl-container\run.bat up" で起動し直してください。'
+    }
+    else {
+        Write-Err "コンテナの起動に失敗しました (終了コード $code)。上の wslc の出力を確認してください。"
     }
     return $code
 }
@@ -463,8 +486,31 @@ function Invoke-Run {
 function Invoke-SetupContainer {
     if (-not (Assert-WslcAvailable)) { return 1 }
     $runOpts = Get-RunOptions
+    Write-Step '[setup-container] SETUP=true で一度だけコンテナを起動します...'
+    Write-Info  '  DB (services / programs) を読み込み、完了すると "setup is done." と表示して自動終了します。'
+    Write-Info  '  コンテナ内のログをそのまま表示します。'
+    # 注意: entrypoint.sh は SETUP の分岐 (server.js 内) に到達する前に pcscd を
+    # 起動する。Windows / wslc 環境ではカードリーダーをコンテナへ渡せないため、
+    # DISABLE_PCSCD=1 を指定していないと pcscd が検出に失敗し続け、
+    # "starting pcscd..." / "failed!" を繰り返して SETUP 処理まで進まない。
+    # その場合は Ctrl+C で中断し、環境変数 DISABLE_PCSCD=1 を設定して再実行する。
+    if ($DisablePcscd -ne '1') {
+        Write-Warn 'DISABLE_PCSCD=1 が未設定です。カードリーダー未接続の環境では pcscd の起動が'
+        Write-Warn '        繰り返し失敗し、"setup is done." まで到達しないことがあります。'
+        Write-Info  '       その場合は Ctrl+C で中断し、次のように再実行してください:'
+        Write-Info  '         set DISABLE_PCSCD=1'
+        Write-Info  '         wsl-container\run.bat setup-container'
+    }
     & wslc run --rm -it --env SETUP=true @runOpts $Image
-    return $LASTEXITCODE
+    $code = $LASTEXITCODE
+    if ($code -eq 0) {
+        Write-Info ''
+        Write-Info '  setup-container が完了しました。'
+    }
+    else {
+        Write-Err "setup-container が終了コード $code で終了しました (Ctrl+C による中断も含みます)。"
+    }
+    return $code
 }
 
 function Invoke-Debug {
@@ -476,19 +522,29 @@ function Invoke-Debug {
 
 function Invoke-Down {
     if (-not (Assert-WslcAvailable)) { return 1 }
-    # 停止・削除 (コンテナが存在しなくてもエラーにしない)
-    & wslc stop $Container 2>&1 | Out-Null
-    & wslc rm   $Container 2>&1 | Out-Null
+
+    # 停止・削除 (コンテナが存在しなくてもエラーにしない)。
+    # 従来は "2>&1 | Out-Null" で全出力を握り潰していたため、実行しても
+    # 無反応に見えていた。ここでは wslc の生出力をそのまま画面へ流し、
+    # 「対象コンテナが無い」場合のみ握り潰したい意図を残すため、終了コードは
+    # 判定せず常に 0 を返す (存在しなくても正常終了扱い)。
+    Write-Step "[停止] コンテナ '$Container' を停止しています..."
+    & wslc stop $Container
+    Write-Step "[削除] コンテナ '$Container' を削除しています..."
+    & wslc rm   $Container
+    Write-Info "  停止・削除の処理を実行しました (対象が無い場合は上のメッセージを無視してください)。"
     return 0
 }
 
 function Invoke-Restart {
+    Write-Step '=== restart: down -> up を実行します ==='
     $code = Invoke-Down
     if ($code -ne 0) { return $code }
     return Invoke-Up
 }
 
 function Invoke-Rebuild {
+    Write-Step '=== rebuild: build -> down -> up を実行します ==='
     $code = Invoke-Build
     if ($code -ne 0) { return $code }
     return Invoke-Restart
