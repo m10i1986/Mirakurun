@@ -1,0 +1,77 @@
+ARG ARCH=
+FROM ${ARCH}node:24-trixie AS build
+ENV DOCKER=YES NODE_ENV=production
+
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    cmake \
+    autoconf \
+    automake \
+    pkg-config \
+    libpcsclite-dev
+
+# libarib25 + recpt1 (PX-M1UR / chardev対応) をビルド
+RUN cd /tmp && \
+    git clone https://github.com/stz2012/libarib25.git && \
+    cd libarib25 && \
+    cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 . && \
+    make && \
+    make install DESTDIR=/dist && \
+    make install && ldconfig && \
+    cd /tmp && \
+    git clone https://github.com/stz2012/recpt1.git && \
+    cd recpt1/recpt1 && \
+    ./autogen.sh && \
+    ./configure --enable-b25 && \
+    make && \
+    make install DESTDIR=/dist
+
+WORKDIR /app
+ADD api.d.ts .
+ADD api.yml .
+ADD index.d.ts .
+ADD package.json .
+ADD pnpm-lock.yaml .
+ADD pnpm-workspace.yaml .
+ADD processes.json .
+ADD tsconfig.json .
+ADD webpack.config.js .
+ADD bin/ ./bin/
+ADD src/ ./src/
+
+RUN corepack enable &&\
+    pnpm install --frozen-lockfile --prod=false && \
+    pnpm run build && \
+    pnpm prune --prod
+
+FROM ${ARCH}node:24-trixie-slim
+WORKDIR /app
+RUN corepack enable
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    procps \
+    usbutils \
+    pcscd \
+    libccid \
+    pcsc-tools \
+    dvb-tools \
+    ffmpeg \
+    && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+ADD container/entrypoint.sh /app/container/entrypoint.sh
+
+# build ステージから recpt1 / libarib25 の成果物をコピー
+COPY --from=build /dist/usr/local/ /usr/local/
+RUN ldconfig
+
+COPY --from=build /app /app
+CMD ["/app/container/entrypoint.sh"]
+EXPOSE 40772 9229
