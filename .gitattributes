@@ -1,0 +1,15 @@
+# 改行コードの正規化ルール
+# Windows のバッチファイルは CRLF でないと `goto`/`call` のラベル解決が
+# 壊れて「指定されたバッチ ラベルが見つかりません」等のエラーになるため、
+# 拡張子ごとに改行コードを固定する。
+
+# デフォルト: Git に自動判別させる
+*           text=auto
+
+# Windows 用スクリプト: 必ず CRLF
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+*.ps1       text eol=crlf
+
+# Linux/Unix 用スクリプト: 必ず LF
+*.sh        text eol=lf
