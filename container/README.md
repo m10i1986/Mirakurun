@@ -12,7 +12,8 @@ Windows 向けには、Podman ではなく Microsoft 製の **WSL Container (`ws
 | `Containerfile` | イメージビルド定義（`docker/Dockerfile` 相当） |
 | `entrypoint.sh` | コンテナ起動スクリプト |
 | `podman.sh` | Linux 向け操作スクリプト（rootless 運用を想定） |
-| `wslc.bat` | **Windows (CLI only) 向け**操作スクリプト（WSL Container / `wslc` 使用） |
+| `wslc.ps1` | **Windows (CLI only) 向け**操作スクリプト本体（WSL Container / `wslc` 使用） |
+| `wslc.bat` | `wslc.ps1` を実行ポリシーに阻まれず起動するためのランチャー |
 | `mirakurun.container` | Linux + systemd (Quadlet) で常駐運用する場合のユニット定義 |
 
 ## Linux
@@ -29,11 +30,15 @@ Windows 向けには、Podman ではなく Microsoft 製の **WSL Container (`ws
 
 ## Windows (CLI only, GUI 不使用)
 
-`wslc.bat` は **Docker Desktop / Podman Desktop（GUI アプリ）を使わずに**、コマンドプロンプト
-だけで Mirakurun コンテナの導入から起動までを行うためのスクリプトです。コンテナランタイムには
+**Docker Desktop / Podman Desktop（GUI アプリ）を使わずに**、コマンドプロンプトだけで
+Mirakurun コンテナの導入から起動までを行うためのスクリプトです。コンテナランタイムには
 Podman ではなく、Microsoft が WSL 2.9.3 以降で提供する **WSL Container (`wslc`)** を使用します
 （[参考記事](https://gihyo.jp/article/2026/06/wsl-container)）。`wslc` は Docker CLI 互換
 （`run` / `build` / `exec` / `logs` 等）のコマンド体系を持つ前提で本スクリプトを実装しています。
+
+処理の本体は PowerShell スクリプト `wslc.ps1` です。`wslc.bat` は、実行ポリシーの設定を
+変更せずに（`-ExecutionPolicy Bypass`）`wslc.ps1` を起動するだけの薄いランチャーで、
+コマンドプロンプトからそのまま実行できます。PowerShell から直接実行しても構いません。
 
 > **注意:** `wslc` は 2026-06 時点でパブリックプレビュー機能です。コマンドやオプションは
 > 正式リリースまでに変更される可能性があります。
@@ -41,15 +46,24 @@ Podman ではなく、Microsoft が WSL 2.9.3 以降で提供する **WSL Contai
 ### 前提条件
 
 - Windows 10 (2004+) / 11、WSL2 が利用できること
-- コマンドプロンプトを**管理者として実行**していること（WSL2 機能更新、usbipd-win 導入、
-  USB デバイスのアタッチのため）
 - [winget (App Installer)](https://apps.microsoft.com/detail/9nblggh4nns1) が利用可能なこと
   （USB チューナーを使わない場合は必須ではありません）
 
+管理者権限が必要な操作（`setup` / `usb-attach`）は、スクリプトが **UAC により自動で昇格**します。
+あらかじめ管理者としてプロンプトを開いておく必要はありません。昇格は別ウィンドウで実行され、
+処理内容を確認できるようキー入力待ちで停止します。
+
 ### 使い方
 
+初回セットアップは、エクスプローラで **`container\wslc.bat` をダブルクリック**するだけでも
+実行できます（引数無しでの起動を `setup` として扱います）。UAC の昇格ダイアログが表示されるので
+許可してください。処理ログは昇格した別ウィンドウに表示され、どちらのウィンドウも結果を
+確認できるようキー入力待ちで停止します。
+
+コマンドプロンプトから実行する場合は次のとおりです。
+
 ```bat
-:: 1. WSL2 をプレリリース版へ更新 (wslc 導入) + usbipd-win 導入 (初回のみ、要管理者権限)
+:: 1. WSL2 をプレリリース版へ更新 (wslc 導入) + usbipd-win 導入 (初回のみ、UAC で自動昇格)
 container\wslc.bat setup
 
 :: 2. イメージのビルド
@@ -65,6 +79,12 @@ container\wslc.bat logs
 container\wslc.bat down
 ```
 
+PowerShell から直接実行する場合は次のとおりです。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File container\wslc.ps1 setup
+```
+
 サブコマンド一覧は `container\wslc.bat help` を参照してください。
 
 ### USB チューナーを使う
@@ -78,7 +98,7 @@ container\wslc.bat down
 :: 1. USB デバイス一覧を表示し、対象チューナーの busid を確認する
 container\wslc.bat usb-list
 
-:: 2. 対象デバイスを WSL2 へアタッチする (要管理者権限)
+:: 2. 対象デバイスを WSL2 へアタッチする (UAC で自動昇格)
 container\wslc.bat usb-attach 2-3
 
 :: 3. WSL2 側でデバイスを確認する (任意)

@@ -7,6 +7,9 @@
 *           text=auto
 
 # Windows 用スクリプト: 必ず CRLF
+# ※ *.ps1 に日本語を含む場合、Windows PowerShell 5.1 は BOM 無し UTF-8 を
+#    ANSI コードページ (日本語環境では CP932) として解釈し文字化けするため、
+#    ファイル自体を UTF-8 BOM 付きで保存すること (eol=crlf は BOM を保持する)。
 *.bat       text eol=crlf
 *.cmd       text eol=crlf
 *.ps1       text eol=crlf
